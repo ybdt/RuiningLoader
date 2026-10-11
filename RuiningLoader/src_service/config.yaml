@@ -1,0 +1,6 @@
+extender_type: "service"
+extender_file: "stealthpalace.so"
+ax_file: "ax_config.axs"
+
+service_name: "stealthpalace"
+service_config: ""

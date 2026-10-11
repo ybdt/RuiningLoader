@@ -1,0 +1,262 @@
+#include <UI/Widgets/LogsWidget.h>
+#include <UI/Widgets/AdaptixWidget.h>
+#include <UI/Widgets/DockWidgetRegister.h>
+#include <Client/AuthProfile.h>
+#include <Client/ConsoleTheme.h>
+#include <Client/Settings.h>
+#include <Utils/Convert.h>
+#include <MainAdaptix.h>
+
+REGISTER_DOCK_WIDGET(LogsWidget, "Logs", true)
+
+LogsWidget::LogsWidget(const AdaptixWidget* w) : DockTab("Logs", w->GetProfile()->GetProject(), ":/icons/logs")
+{
+    this->createUI();
+
+    connect(searchLineEdit,      &QLineEdit::returnPressed,  this, &LogsWidget::handleSearch);
+    connect(nextButton,          &ClickableLabel::clicked,   this, &LogsWidget::handleSearch);
+    connect(prevButton,          &ClickableLabel::clicked,   this, &LogsWidget::handleSearchBackward);
+    connect(hideButton,          &ClickableLabel::clicked,   this, &LogsWidget::toggleSearchPanel);
+    connect(logsConsoleTextEdit, &TextEditConsole::ctx_find, this, &LogsWidget::toggleSearchPanel);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+F"), logsConsoleTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, this, &LogsWidget::toggleSearchPanel);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+L"), logsConsoleTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, logsConsoleTextEdit, &QPlainTextEdit::clear);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+A"), logsConsoleTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, logsConsoleTextEdit, &QPlainTextEdit::selectAll);
+
+    connect(&ConsoleThemeManager::instance(), &ConsoleThemeManager::themeChanged, this, &LogsWidget::applyTheme);
+    connect(logsConsoleTextEdit, &TextEditConsole::ctx_bgToggled, this, [this](bool){ applyTheme(); });
+    applyTheme();
+
+    this->dockWidget->setWidget(this);
+}
+
+LogsWidget::~LogsWidget() = default;
+
+void LogsWidget::createUI()
+{
+    searchWidget = new QWidget(this);
+    searchWidget->setVisible(false);
+
+    prevButton = new ClickableLabel("<");
+    prevButton->setCursor( Qt::PointingHandCursor );
+
+    nextButton = new ClickableLabel(">");
+    nextButton->setCursor( Qt::PointingHandCursor );
+
+    searchLabel    = new QLabel("0 of 0");
+    searchLineEdit = new QLineEdit();
+    searchLineEdit->setPlaceholderText("Find");
+    searchLineEdit->setMaximumWidth(300);
+
+    hideButton = new ClickableLabel("X");
+    hideButton->setCursor( Qt::PointingHandCursor );
+
+    spacer = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+    searchLayout = new QHBoxLayout(searchWidget);
+    searchLayout->setContentsMargins(0, 3, 0, 0);
+    searchLayout->setSpacing(4);
+    searchLayout->addWidget(prevButton);
+    searchLayout->addWidget(nextButton);
+    searchLayout->addWidget(searchLabel);
+    searchLayout->addWidget(searchLineEdit);
+    searchLayout->addWidget(hideButton);
+    searchLayout->addSpacerItem(spacer);
+
+    logsConsoleTextEdit = new TextEditConsole(this);
+    logsConsoleTextEdit->setReadOnly(true);
+    logsConsoleTextEdit->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; border-radius: 4px;");
+    logsConsoleTextEdit->setAutoScrollEnabled(true);
+
+    logsGridLayout = new QGridLayout(this);
+    logsGridLayout->setContentsMargins(1, 1, 1, 1);
+    logsGridLayout->setVerticalSpacing(1);
+    logsGridLayout->addWidget( searchWidget,        0, 0, 1, 1);
+    logsGridLayout->addWidget( logsConsoleTextEdit, 1, 0, 1, 1);
+
+    logsWidget = new QWidget(this);
+    logsWidget->setLayout(logsGridLayout);
+
+    /// ToDo: todo list + sync chat
+    // todoLabel = new QLabel(this);
+    // todoLabel->setText("ToDo notes");
+    // todoLabel->setAlignment(Qt::AlignCenter);
+    //
+    // todoGridLayout = new QGridLayout(this);
+    // todoGridLayout->setContentsMargins(1, 1, 1, 1);
+    // todoGridLayout->setVerticalSpacing(1);
+    // todoGridLayout->setHorizontalSpacing(2);
+    //
+    // todoGridLayout->addWidget(todoLabel, 0, 0, 1, 1);
+    //
+    // todoWidget = new QWidget(this);
+    // todoWidget->setLayout(todoGridLayout);
+
+
+
+    mainHSplitter = new QSplitter( Qt::Horizontal, this );
+    mainHSplitter->setHandleWidth(3);
+    mainHSplitter->addWidget(logsWidget);
+
+    mainGridLayout = new QGridLayout( this );
+    mainGridLayout->setContentsMargins(0, 0, 0, 0);
+    mainGridLayout->setVerticalSpacing(0);
+    mainGridLayout->addWidget( mainHSplitter, 0, 0, 1, 1);
+
+    this->setLayout( mainGridLayout );
+}
+
+void LogsWidget::SetUpdatesEnabled(const bool enabled)
+{
+    logsConsoleTextEdit->setUpdatesEnabled(enabled);
+}
+
+void LogsWidget::findAndHighlightAll(const QString &pattern)
+{
+    allSelections.clear();
+
+    QTextCursor cursor(logsConsoleTextEdit->document());
+    cursor.movePosition(QTextCursor::Start);
+
+    QTextCharFormat baseFmt;
+    baseFmt.setBackground(Qt::blue);
+    baseFmt.setForeground(Qt::white);
+
+    while (true) {
+        auto found = logsConsoleTextEdit->document()->find(pattern, cursor);
+        if (found.isNull())
+            break;
+
+        QTextEdit::ExtraSelection sel;
+        sel.cursor = found;
+        sel.format = baseFmt;
+        allSelections.append(sel);
+
+        cursor = found;
+    }
+
+    logsConsoleTextEdit->setExtraSelections(allSelections);
+}
+
+void LogsWidget::highlightCurrent() const
+{
+    if (allSelections.isEmpty()) {
+        searchLabel->setText("0 of 0");
+        return;
+    }
+
+    auto sels = allSelections;
+
+    QTextCharFormat activeFmt;
+    activeFmt.setBackground(Qt::white);
+    activeFmt.setForeground(Qt::black);
+
+    sels[currentIndex].format = activeFmt;
+
+    logsConsoleTextEdit->setExtraSelections(sels);
+
+    logsConsoleTextEdit->setTextCursor(sels[currentIndex].cursor);
+
+    searchLabel->setText(QString("%1 of %2").arg(currentIndex + 1).arg(sels.size()));
+}
+
+void LogsWidget::AddLogs(const int type, const qint64 time, const QString &message)
+{
+    const auto& theme = ConsoleThemeManager::instance().theme();
+
+    QString sTime = UnixTimestampGlobalToStringLocal(time);
+    QString logTime = QString("[%1] -> ").arg(sTime);
+    logsConsoleTextEdit->appendFormatted(logTime, [&](QTextCharFormat& fmt){ fmt = theme.logDebug.toFormat(); });
+
+    QString logMsg = message + "\n";
+
+    if( type == EVENT_CLIENT_CONNECT )         logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.operatorConnect.toFormat(); });
+    else if( type == EVENT_CLIENT_DISCONNECT ) logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.operatorDisconnect.toFormat(); });
+    else if( type == EVENT_LISTENER_START )    logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.listenerStart.toFormat(); });
+    else if( type == EVENT_LISTENER_STOP )     logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.listenerStop.toFormat(); });
+    else if( type == EVENT_AGENT_NEW )         logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.agentNew.toFormat(); });
+    else if( type == EVENT_TUNNEL_START )      logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.tunnel.toFormat(); });
+    else if( type == EVENT_TUNNEL_STOP )       logsConsoleTextEdit->appendFormatted(logMsg, [&](QTextCharFormat& fmt){ fmt = theme.tunnel.toFormat(); });
+    else                                       logsConsoleTextEdit->appendPlain(logMsg);
+}
+
+void LogsWidget::applyTheme()
+{
+    const auto& theme = ConsoleThemeManager::instance().theme();
+    const auto& bg = theme.background;
+    bool showBg = GlobalClient->settings->data.ConsoleShowBackground;
+    QString imagePath = (showBg && bg.type == ConsoleBackground::Image) ? bg.imagePath : QString();
+    logsConsoleTextEdit->setConsoleBackground(bg.color, imagePath, bg.dimming);
+    logsConsoleTextEdit->setStyleSheet(QString("QPlainTextEdit { color: %1; border: 1px solid #2A2A2A; border-radius: 4px; }").arg(theme.textColor.name()));
+}
+
+void LogsWidget::Clear() const
+{
+    logsConsoleTextEdit->clear();
+}
+
+void LogsWidget::toggleSearchPanel()
+{
+    if (this->searchWidget->isVisible()) {
+        this->searchWidget->setVisible(false);
+        searchLineEdit->setText("");
+        handleSearch();
+    }
+    else {
+        this->searchWidget->setVisible(true);
+        searchLineEdit->setFocus();
+        searchLineEdit->selectAll();
+    }
+}
+
+void LogsWidget::handleSearch()
+{
+    const QString pattern = searchLineEdit->text();
+    if ( pattern.isEmpty() && allSelections.size() ) {
+        allSelections.clear();
+        currentIndex = -1;
+        searchLabel->setText("0 of 0");
+        logsConsoleTextEdit->setExtraSelections({});
+        return;
+    }
+
+    if (currentIndex < 0 || allSelections.isEmpty() || allSelections[0].cursor.selectedText() != pattern) {
+        findAndHighlightAll(pattern);
+        currentIndex = 0;
+    }
+    else {
+        currentIndex = (currentIndex + 1) % allSelections.size();
+    }
+
+    highlightCurrent();
+}
+
+void LogsWidget::handleSearchBackward()
+{
+    const QString pattern = searchLineEdit->text();
+    if (pattern.isEmpty() && allSelections.size()) {
+        allSelections.clear();
+        currentIndex = -1;
+        searchLabel->setText("0 of 0");
+        logsConsoleTextEdit->setExtraSelections({});
+        return;
+    }
+
+    if (currentIndex < 0 || allSelections.isEmpty() || allSelections[0].cursor.selectedText() != pattern) {
+        findAndHighlightAll(pattern);
+        currentIndex = allSelections.size() - 1;
+    }
+    else {
+        currentIndex = (currentIndex - 1 + allSelections.size()) % allSelections.size();
+    }
+
+    highlightCurrent();
+}

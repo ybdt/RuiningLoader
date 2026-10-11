@@ -1,0 +1,645 @@
+#include <Agent/Agent.h>
+#include <UI/Widgets/AdaptixWidget.h>
+#include <UI/Widgets/ConsoleWidget.h>
+#include <UI/Widgets/DockWidgetRegister.h>
+#include <UI/Dialogs/DialogUploader.h>
+#include <Client/Requestor.h>
+#include <Client/Settings.h>
+#include <Client/AuthProfile.h>
+#include <Client/ConsoleTheme.h>
+#include <Utils/FontManager.h>
+#include <MainAdaptix.h>
+
+REGISTER_DOCK_WIDGET(ConsoleWidget, "Agent Console", true)
+
+ConsoleWidget::ConsoleWidget( AdaptixWidget* w, Agent* a, Commander* c) : DockTab(QString("Console [%1]").arg( a->data.Id ), w->GetProfile()->GetProject())
+{
+    adaptixWidget = w;
+    agent         = a;
+    commander     = c;
+
+    this->createUI();
+    this->upgradeCompleter();
+
+    connect(CommandCompleter, QOverload<const QString &>::of(&QCompleter::activated), this, &ConsoleWidget::onCompletionSelected, Qt::DirectConnection);
+    connect(InputLineEdit,    &QLineEdit::returnPressed,                              this, &ConsoleWidget::processInput,         Qt::QueuedConnection );
+    connect(searchLineEdit,   &QLineEdit::returnPressed,                              this, &ConsoleWidget::handleSearch);
+    connect(nextButton,       &ClickableLabel::clicked,                               this, &ConsoleWidget::handleSearch);
+    connect(prevButton,       &ClickableLabel::clicked,                               this, &ConsoleWidget::handleSearchBackward);
+    connect(searchInput,      &KPH_SearchInput::escPressed,                           this, &ConsoleWidget::toggleSearchPanel );
+    connect(hideButton,       &ClickableLabel::clicked,                               this, &ConsoleWidget::toggleSearchPanel);
+    connect(OutputTextEdit,   &TextEditConsole::ctx_find,                             this, &ConsoleWidget::toggleSearchPanel);
+    connect(OutputTextEdit,   &TextEditConsole::ctx_history,                          this, &ConsoleWidget::handleShowHistory);
+    connect(commander,        &Commander::commandsUpdated,                            this, &ConsoleWidget::upgradeCompleter);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+F"), OutputTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, this, &ConsoleWidget::toggleSearchPanel);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+L"), OutputTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, OutputTextEdit, &QPlainTextEdit::clear);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+A"), OutputTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, OutputTextEdit, &QPlainTextEdit::selectAll);
+
+    shortcutSearch = new QShortcut(QKeySequence("Ctrl+H"), OutputTextEdit);
+    shortcutSearch->setContext(Qt::WidgetShortcut);
+    connect(shortcutSearch, &QShortcut::activated, this, &ConsoleWidget::handleShowHistory);
+
+    kphInputLineEdit = new KPH_ConsoleInput(InputLineEdit, OutputTextEdit, this);
+    InputLineEdit->installEventFilter(kphInputLineEdit);
+
+    connect(&ConsoleThemeManager::instance(), &ConsoleThemeManager::themeChanged, this, &ConsoleWidget::applyTheme);
+    connect(OutputTextEdit, &TextEditConsole::ctx_bgToggled, this, [this](bool){ applyTheme(); });
+    applyTheme();
+
+    this->dockWidget->setWidget(this);
+}
+
+ConsoleWidget::~ConsoleWidget() {}
+
+void ConsoleWidget::SetCommander(Commander* c)
+{
+    if (commander == c)
+        return;
+
+    if (commander)
+        disconnect(commander, &Commander::commandsUpdated, this, &ConsoleWidget::upgradeCompleter);
+
+    commander = c;
+
+    if (commander)
+        connect(commander, &Commander::commandsUpdated, this, &ConsoleWidget::upgradeCompleter);
+
+    upgradeCompleter();
+}
+
+void ConsoleWidget::SetUpdatesEnabled(const bool enabled)
+{
+    OutputTextEdit->setUpdatesEnabled(enabled);
+    OutputTextEdit->setSyncMode(!enabled);
+}
+
+void ConsoleWidget::createUI()
+{
+    searchWidget = new QWidget(this);
+    searchWidget->setVisible(false);
+
+    prevButton = new ClickableLabel("<");
+    prevButton->setCursor( Qt::PointingHandCursor );
+
+    nextButton = new ClickableLabel(">");
+    nextButton->setCursor( Qt::PointingHandCursor );
+
+    searchLabel    = new QLabel("0 of 0");
+    searchLineEdit = new QLineEdit();
+    searchLineEdit->setPlaceholderText("Find");
+    searchLineEdit->setMaximumWidth(300);
+
+    searchInput = new KPH_SearchInput(searchLineEdit, this);
+
+    hideButton = new ClickableLabel("X");
+    hideButton->setCursor( Qt::PointingHandCursor );
+
+    spacer = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+    searchLayout = new QHBoxLayout(searchWidget);
+    searchLayout->setContentsMargins(0, 3, 0, 0);
+    searchLayout->setSpacing(4);
+    searchLayout->addWidget(prevButton);
+    searchLayout->addWidget(nextButton);
+    searchLayout->addWidget(searchLabel);
+    searchLayout->addWidget(searchLineEdit);
+    searchLayout->addWidget(hideButton);
+    searchLayout->addSpacerItem(spacer);
+
+    QString prompt = QString("%1 >").arg(agent->data.Name);
+    CmdLabel = new QLabel(this );
+    CmdLabel->setStyleSheet("padding: 4px; color: #BEBEBE; background-color: transparent;");
+    CmdLabel->setText( prompt );
+
+    InputLineEdit = new QLineEdit(this);
+    InputLineEdit->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; padding: 4px; border-radius: 4px;");
+    InputLineEdit->setFont( FontManager::instance().getFont("Hack") );
+
+    QString info = "";
+    if ( agent->data.Domain == "" || agent->data.Computer == agent->data.Domain )
+        info = QString("[%1] %2 @ %3").arg( agent->data.Id ).arg( agent->data.Username ).arg( agent->data.Computer );
+    else
+        info = QString("[%1] %2 @ %3.%4").arg( agent->data.Id ).arg( agent->data.Username ).arg( agent->data.Computer ).arg( agent->data.Domain );
+
+    InfoLabel = new QLabel(this);
+    InfoLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    InfoLabel->setStyleSheet("padding: 4px; color: #BEBEBE; background-color: transparent;");
+    InfoLabel->setText ( info );
+
+    OutputTextEdit = new TextEditConsole(this, GlobalClient->settings->data.ConsoleBufferSize, GlobalClient->settings->data.ConsoleNoWrap, GlobalClient->settings->data.ConsoleAutoScroll);
+    OutputTextEdit->setReadOnly(true);
+    OutputTextEdit->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; border-radius: 4px;");
+    OutputTextEdit->setFont( FontManager::instance().getFont("Hack") );
+
+    MainGridLayout = new QGridLayout(this );
+    MainGridLayout->setVerticalSpacing(4 );
+    MainGridLayout->setContentsMargins(0, 1, 0, 4 );
+    MainGridLayout->addWidget( searchWidget,   0, 0, 1, 2 );
+    MainGridLayout->addWidget( OutputTextEdit, 1, 0, 1, 2 );
+    MainGridLayout->addWidget( InfoLabel,      2, 0, 1, 2 );
+    MainGridLayout->addWidget( CmdLabel,       3, 0, 1, 1 );
+    MainGridLayout->addWidget( InputLineEdit,  3, 1, 1, 1 );
+
+    completerModel = new QStringListModel();
+    CommandCompleter = new QCompleter(completerModel, this);
+    CommandCompleter->popup()->setObjectName("Completer");
+    CommandCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    CommandCompleter->setCompletionMode(QCompleter::PopupCompletion);
+
+    InputLineEdit->setCompleter(CommandCompleter);
+}
+
+void ConsoleWidget::findAndHighlightAll(const QString &pattern)
+{
+    allSelections.clear();
+
+    QTextCursor cursor(OutputTextEdit->document());
+    cursor.movePosition(QTextCursor::Start);
+
+    QTextCharFormat baseFmt;
+    baseFmt.setBackground(Qt::blue);
+    baseFmt.setForeground(Qt::white);
+
+    while (true) {
+        auto found = OutputTextEdit->document()->find(pattern, cursor);
+        if (found.isNull())
+            break;
+
+        QTextEdit::ExtraSelection sel;
+        sel.cursor = found;
+        sel.format = baseFmt;
+        allSelections.append(sel);
+
+        cursor = found;
+    }
+
+    OutputTextEdit->setExtraSelections(allSelections);
+}
+
+void ConsoleWidget::highlightCurrent() const
+{
+    if (allSelections.isEmpty()) {
+        searchLabel->setText("0 of 0");
+        return;
+    }
+
+    auto sels = allSelections;
+
+    QTextCharFormat activeFmt;
+    activeFmt.setBackground(Qt::white);
+    activeFmt.setForeground(Qt::black);
+
+    sels[currentIndex].format = activeFmt;
+
+    OutputTextEdit->setExtraSelections(sels);
+
+    OutputTextEdit->setTextCursor(sels[currentIndex].cursor);
+
+    searchLabel->setText(QString("%1 of %2").arg(currentIndex + 1).arg(sels.size()));
+}
+
+
+
+void ConsoleWidget::upgradeCompleter() const
+{
+    if (commander)
+        completerModel->setStringList(commander->GetCommands());
+}
+
+void ConsoleWidget::InputFocus() const { InputLineEdit->setFocus(); }
+
+void ConsoleWidget::AddToHistory(const QString &command) { kphInputLineEdit->AddToHistory(command); }
+
+void ConsoleWidget::SetInput(const QString &command) { InputLineEdit->setText(command); }
+
+void ConsoleWidget::Clear() { OutputTextEdit->clear(); }
+
+void ConsoleWidget::ConsoleOutputMessage(const qint64 timestamp, const QString &taskId, const int type, const QString &message, const QString &text, const bool completed)
+{
+    const auto& theme = ConsoleThemeManager::instance().theme();
+
+    QString promptTime = "";
+    if (GlobalClient->settings->data.ConsoleTime)
+        promptTime = UnixTimestampGlobalToStringLocal(timestamp);
+
+    if( !message.isEmpty() ) {
+
+        if ( !promptTime.isEmpty() )
+            OutputTextEdit->appendFormatted("[" + promptTime + "] ", [&](QTextCharFormat& fmt){ fmt = theme.debug.toFormat(); });
+
+        if (type == CONSOLE_OUT_INFO || type == CONSOLE_OUT_LOCAL_INFO)
+            OutputTextEdit->appendColor("[*] ", theme.statusInfo);
+        else if (type == CONSOLE_OUT_SUCCESS || type == CONSOLE_OUT_LOCAL_SUCCESS)
+            OutputTextEdit->appendColor("[+] ", theme.statusSuccess);
+        else if (type == CONSOLE_OUT_ERROR || type == CONSOLE_OUT_LOCAL_ERROR)
+            OutputTextEdit->appendColor("[-] ", theme.statusError);
+        else
+            OutputTextEdit->appendPlain(" ");
+
+        QString printMessage = TrimmedEnds(message);
+        if ( text.isEmpty() || type == CONSOLE_OUT_LOCAL_INFO || type == CONSOLE_OUT_LOCAL_SUCCESS || type == CONSOLE_OUT_LOCAL_ERROR || type == CONSOLE_OUT_SUCCESS || type == CONSOLE_OUT_ERROR)
+            printMessage += "\n";
+        OutputTextEdit->appendPlain(printMessage);
+    }
+
+    if ( !text.isEmpty() )
+        OutputTextEdit->appendPlain( TrimmedEnds(text) + "\n");
+
+    if (completed) {
+        QString deleter = "\n+-------------------------------------------------------------------------------------+\n";
+        if ( !taskId.isEmpty() )
+            deleter = QString("\n+--- Task [%1] closed ----------------------------------------------------------+\n").arg(taskId);
+
+        OutputTextEdit->appendFormatted(deleter, [&](QTextCharFormat& fmt){ fmt = theme.debug.toFormat(); });
+    }
+}
+
+void ConsoleWidget::ConsoleOutputPrompt(const qint64 timestamp, const QString &taskId, const QString &user, const QString &commandLine) const
+{
+    const auto& theme = ConsoleThemeManager::instance().theme();
+
+    QString promptTime = "";
+    if (GlobalClient->settings->data.ConsoleTime)
+        promptTime = UnixTimestampGlobalToStringLocal(timestamp);
+
+    if ( !commandLine.isEmpty() ) {
+        OutputTextEdit->appendPlain("\n");
+
+        if ( !promptTime.isEmpty() )
+            OutputTextEdit->appendFormatted("[" + promptTime + "] ", [&](QTextCharFormat& fmt){ fmt = theme.debug.toFormat(); });
+
+        if ( !user.isEmpty() )
+            OutputTextEdit->appendFormatted(user + " ", [&](QTextCharFormat& fmt){ fmt = theme.operatorStyle.toFormat(); });
+
+        if( !taskId.isEmpty() )
+            OutputTextEdit->appendFormatted("[" + taskId + "] ", [&](QTextCharFormat& fmt){ fmt = theme.task.toFormat(); });
+
+        OutputTextEdit->appendFormatted(agent->data.Name, [&](QTextCharFormat& fmt){ fmt = theme.agent.toFormat(); });
+        OutputTextEdit->appendFormatted(" " + theme.input.symbol + " ", [&](QTextCharFormat& fmt){ fmt = theme.input.style.toFormat(); });
+
+        OutputTextEdit->appendFormatted(commandLine + "\n", [&](QTextCharFormat& fmt){ fmt = theme.command.toFormat(); });
+    }
+}
+
+void ConsoleWidget::applyTheme()
+{
+    const auto& theme = ConsoleThemeManager::instance().theme();
+    const auto& bg = theme.background;
+    bool showBg = GlobalClient->settings->data.ConsoleShowBackground;
+    QString imagePath = (showBg && bg.type == ConsoleBackground::Image) ? bg.imagePath : QString();
+    OutputTextEdit->setConsoleBackground(bg.color, imagePath, bg.dimming);
+    OutputTextEdit->setStyleSheet(QString("QPlainTextEdit { color: %1; border: 1px solid #2A2A2A; border-radius: 4px; }").arg(theme.textColor.name()));
+}
+
+void ConsoleWidget::cleanupHooksOnError(const QString& hookId, const QString& handlerId, bool hasHook, bool hasHandler)
+{
+    if (hasHook && adaptixWidget->PostHooksJS.contains(hookId))
+        adaptixWidget->PostHooksJS.remove(hookId);
+    if (hasHandler && adaptixWidget->PostHandlersJS.contains(handlerId))
+        adaptixWidget->PostHandlersJS.remove(handlerId);
+}
+
+void ConsoleWidget::processFileUploads(const QList<QPair<QString, QString>>& fileTasks, int index,
+    QJsonObject data, const QString& commandLine, bool UI,
+    const QString& hookId, const QString& handlerId, bool hasHook, bool hasHandler)
+{
+    if (index >= fileTasks.size()) {
+        QJsonDocument jsonDoc(data);
+        QString commandData = jsonDoc.toJson();
+
+        QJsonObject dataJson;
+        dataJson["id"]            = agent->data.Id;
+        dataJson["ui"]            = UI;
+        dataJson["cmdline"]       = commandLine;
+        dataJson["data"]          = commandData;
+        dataJson["ax_hook_id"]    = hookId;
+        dataJson["ax_handler_id"] = handlerId;
+        dataJson["wait_answer"]   = false;
+        QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+        HttpReqAgentCommandAsync(jsonData, *(agent->adaptixWidget->GetProfile()));
+        return;
+    }
+
+    QString argName  = fileTasks[index].first;
+    QString filePath = fileTasks[index].second;
+    QString objId    = GenerateRandomString(8, "hex");
+
+    /// 1. Get OTP asynchronously
+
+    HttpReqGetOTPAsync("tmp_upload", objId, *(agent->adaptixWidget->GetProfile()),
+        [this, fileTasks, index, data, commandLine, UI, hookId, handlerId, hasHook, hasHandler, argName, filePath, objId]
+        (bool success, const QString& message, const QJsonObject& response) mutable {
+
+            if (!success || !response.contains("ok") || !response["ok"].toBool()) {
+                cleanupHooksOnError(hookId, handlerId, hasHook, hasHandler);
+                QString errMsg = response.contains("message") ? response["message"].toString() : message;
+                MessageError(errMsg.isEmpty() ? "OTP request failed" : errMsg);
+                return;
+            }
+
+            QString otp  = response["message"].toString();
+            QString sUrl = agent->adaptixWidget->GetProfile()->GetURL() + "/otp/upload/temp";
+
+            /// 2. Stream file upload (non-blocking dialog)
+
+            auto* uploaderDialog = new DialogUploader(sUrl, otp, filePath);
+            uploaderDialog->setAttribute(Qt::WA_DeleteOnClose);
+
+            connect(uploaderDialog, &DialogUploader::uploadFinished, this,
+                [this, fileTasks, index, data, commandLine, UI, hookId, handlerId, hasHook, hasHandler, argName, objId]
+                (bool uploadSuccess) mutable {
+                    if (!uploadSuccess) {
+                        cleanupHooksOnError(hookId, handlerId, hasHook, hasHandler);
+                        return;
+                    }
+
+                    /// Replace __file_path marker with __file_ref
+                    QJsonObject fileRef;
+                    fileRef["__file_ref"] = objId;
+                    data[argName] = fileRef;
+
+                    /// Process next file or send command
+                    processFileUploads(fileTasks, index + 1, data, commandLine, UI, hookId, handlerId, hasHook, hasHandler);
+                });
+
+            uploaderDialog->show();
+        });
+}
+
+void ConsoleWidget::ProcessCmdResult(const QString &commandLine, const CommanderResult &cmdResult, const bool UI)
+{
+    if ( cmdResult.output ) {
+        if (UI) {
+            if (cmdResult.error)
+                MessageError(cmdResult.message);
+        }
+        else {
+            QString message = "";
+            QString text    = "";
+            int     type    = 0;
+
+            if (cmdResult.error) {
+                type    = CONSOLE_OUT_LOCAL_ERROR;
+                message = cmdResult.message;
+            }
+            else {
+                type = CONSOLE_OUT_LOCAL;
+                text = cmdResult.message;
+            }
+
+            this->ConsoleOutputPrompt(0, "", "", commandLine);
+            this->ConsoleOutputMessage(0, "", type, message, text, true);
+        }
+        return;
+    }
+
+    QString hookId = "";
+    if (cmdResult.post_hook.isSet) {
+        hookId = GenerateRandomString(8, "hex");
+        while (adaptixWidget->PostHooksJS.contains(hookId))
+            hookId = GenerateRandomString(8, "hex");
+
+        adaptixWidget->PostHooksJS[hookId] = cmdResult.post_hook;
+    }
+
+    QString handlerId = "";
+    if (cmdResult.handler.isSet) {
+        handlerId = GenerateRandomString(8, "hex");
+        while (adaptixWidget->PostHandlersJS.contains(handlerId))
+            handlerId = GenerateRandomString(8, "hex");
+
+        adaptixWidget->PostHandlersJS[handlerId] = cmdResult.handler;
+    }
+
+    /// Check for __file_path markers (large files >= 3 Mb)
+    QList<QPair<QString, QString>> fileTasks;
+    for (auto it = cmdResult.data.begin(); it != cmdResult.data.end(); ++it) {
+        if (it.value().isObject()) {
+            QJsonObject obj = it.value().toObject();
+            if (obj.contains("__file_path"))
+                fileTasks.append({it.key(), obj["__file_path"].toString()});
+        }
+    }
+
+    if (!fileTasks.isEmpty()) {
+        /// Async file upload flow — non-blocking
+        this->ConsoleOutputPrompt(0, "", "", commandLine);
+        this->ConsoleOutputMessage(0, "", CONSOLE_OUT_LOCAL_INFO, "Uploading file(s) to server...", "", false);
+
+        processFileUploads(fileTasks, 0, cmdResult.data, commandLine, UI,
+            hookId, handlerId, cmdResult.post_hook.isSet, cmdResult.handler.isSet);
+        return;
+    }
+
+    /// Standard flow for commands without large file markers
+    QJsonDocument jsonDoc(cmdResult.data);
+    QString commandData = jsonDoc.toJson();
+
+    QJsonObject dataJson;
+    dataJson["id"]            = agent->data.Id;
+    dataJson["ui"]            = UI;
+    dataJson["cmdline"]       = commandLine;
+    dataJson["data"]          = commandData;
+    dataJson["ax_hook_id"]    = hookId;
+    dataJson["ax_handler_id"] = handlerId;
+    dataJson["wait_answer"]   = false;
+    QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+    /// 5 Mb fallback for non-file large commands (e.g. from scripts)
+    if (commandData.size() < 0x500000) {
+        HttpReqAgentCommandAsync(jsonData, *(agent->adaptixWidget->GetProfile()));
+    }
+    else {
+        /// 1. Get OTP
+
+        QString message = QString();
+        bool ok = false;
+        QString objId = GenerateRandomString(8, "hex");
+        bool result = HttpReqGetOTP("tmp_upload", objId, *(agent->adaptixWidget->GetProfile()), &message, &ok);
+        if (!result) {
+            cleanupHooksOnError(hookId, handlerId, cmdResult.post_hook.isSet, cmdResult.handler.isSet);
+            MessageError("Response timeout");
+            return;
+        }
+        if (!ok) {
+            cleanupHooksOnError(hookId, handlerId, cmdResult.post_hook.isSet, cmdResult.handler.isSet);
+            MessageError(message);
+            return;
+        }
+        QString otp = message;
+
+        /// 2. Upload with OTP
+
+        QString sUrl = agent->adaptixWidget->GetProfile()->GetURL() + "/otp/upload/temp";
+
+        auto* uploaderDialog = new DialogUploader(sUrl, otp, jsonData);
+        uploaderDialog->setAttribute(Qt::WA_DeleteOnClose);
+
+        connect(uploaderDialog, &DialogUploader::uploadFinished, this,
+            [this, hookId, handlerId, objId, cmdResult](const bool success) {
+                if (!success) {
+                    cleanupHooksOnError(hookId, handlerId, cmdResult.post_hook.isSet, cmdResult.handler.isSet);
+                    return;
+                }
+
+                /// 3. Send Command
+                QJsonObject data2Json;
+                data2Json["object_id"] = objId;
+                QByteArray json2Data = QJsonDocument(data2Json).toJson();
+                HttpReqAgentCommandFileAsync(json2Data, *(agent->adaptixWidget->GetProfile()));
+            });
+
+        uploaderDialog->show();
+    }
+}
+
+/// SLOTS
+
+void ConsoleWidget::processInput()
+{
+    if (!commander)
+        return;
+
+    QString commandLine = TrimmedEnds(InputLineEdit->text());
+
+    if ( this->userSelectedCompletion ) {
+        this->userSelectedCompletion = false;
+            return;
+    }
+
+    InputLineEdit->clear();
+    if (commandLine.isEmpty())
+        return;
+
+    this->AddToHistory(commandLine);
+
+    auto cmdResult = commander->ProcessInput( agent->data.Id, commandLine );
+    if (cmdResult.is_pre_hook)
+        return;
+
+    this->ProcessCmdResult(commandLine, cmdResult, false);
+}
+
+void ConsoleWidget::toggleSearchPanel()
+{
+    if (this->searchWidget->isVisible()) {
+        this->searchWidget->setVisible(false);
+        searchLineEdit->setText("");
+        handleSearch();
+    }
+    else {
+        this->searchWidget->setVisible(true);
+        searchLineEdit->setFocus();
+        searchLineEdit->selectAll();
+    }
+}
+
+void ConsoleWidget::handleSearch()
+{
+    const QString pattern = searchLineEdit->text();
+    if ( pattern.isEmpty() && allSelections.size() ) {
+        allSelections.clear();
+        currentIndex = -1;
+        searchLabel->setText("0 of 0");
+        OutputTextEdit->setExtraSelections({});
+        return;
+    }
+
+    if (currentIndex < 0 || allSelections.isEmpty() || allSelections[0].cursor.selectedText().compare( pattern, Qt::CaseInsensitive) != 0 ) {
+        findAndHighlightAll(pattern);
+        currentIndex = 0;
+    }
+    else {
+        currentIndex = (currentIndex + 1) % allSelections.size();
+    }
+
+    highlightCurrent();
+}
+
+void ConsoleWidget::handleSearchBackward()
+{
+    const QString pattern = searchLineEdit->text();
+    if (pattern.isEmpty() && allSelections.size()) {
+        allSelections.clear();
+        currentIndex = -1;
+        searchLabel->setText("0 of 0");
+        OutputTextEdit->setExtraSelections({});
+        return;
+    }
+
+    if (currentIndex < 0 || allSelections.isEmpty() || allSelections[0].cursor.selectedText().compare( pattern, Qt::CaseInsensitive) != 0 ) {
+        findAndHighlightAll(pattern);
+        currentIndex = allSelections.size() - 1;
+    }
+    else {
+        currentIndex = (currentIndex - 1 + allSelections.size()) % allSelections.size();
+    }
+
+    highlightCurrent();
+}
+
+void ConsoleWidget::handleShowHistory()
+{
+    if (!kphInputLineEdit)
+        return;
+
+    QDialog *historyDialog = new QDialog(this);
+    historyDialog->setWindowTitle(tr("Command History"));
+    historyDialog->setAttribute(Qt::WA_DeleteOnClose);
+
+
+    QListWidget *historyList = new QListWidget(historyDialog);
+    historyList->setWordWrap(true);
+    historyList->setTextElideMode(Qt::ElideNone);
+    historyList->setAlternatingRowColors(true);
+    historyList->setItemDelegate(new QStyledItemDelegate(historyList));
+
+    QPushButton *closeButton = new QPushButton(tr("Close"), historyDialog);
+
+    QVBoxLayout *layout = new QVBoxLayout(historyDialog);
+    layout->addWidget(historyList);
+    layout->addWidget(closeButton);
+
+    const QStringList& history = kphInputLineEdit->getHistory();
+
+    for (const QString &command : history) {
+        QListWidgetItem *item = new QListWidgetItem(command);
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+        item->setToolTip(command);
+        int lines = (command.length() / 80) + 1;
+        item->setSizeHint(QSize(item->sizeHint().width(), lines * 20));
+        historyList->addItem(item);
+    }
+
+    if (history.isEmpty()) {
+        QListWidgetItem *item = new QListWidgetItem(tr("No command history available"));
+        item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
+        historyList->addItem(item);
+    }
+
+    connect(closeButton, &QPushButton::clicked, historyDialog, &QDialog::accept);
+
+    connect(historyList, &QListWidget::itemDoubleClicked, this, [this, historyDialog](const QListWidgetItem *item) {
+        InputLineEdit->setText(item->text());
+        historyDialog->accept();
+        InputLineEdit->setFocus();
+    });
+
+    historyDialog->resize(800, 500);
+    historyDialog->move(QCursor::pos() - QPoint(historyDialog->width()/2, historyDialog->height()/2));
+
+    historyDialog->setModal(true);
+    historyDialog->show();
+}
+
+void ConsoleWidget::onCompletionSelected(const QString &selectedText) { userSelectedCompletion = true; }

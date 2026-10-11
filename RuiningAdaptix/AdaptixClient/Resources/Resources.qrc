@@ -1,0 +1,152 @@
+<RCC>
+
+    <qresource prefix="/">
+        <file alias="LogoLin">Logo.png</file>
+        <file alias="SyncLogo">SyncLogo.png</file>
+    </qresource>
+
+    <qresource prefix="/fonts">
+        <file alias="Hack">fonts/Hack/Hack-Regular.ttf</file>
+        <file alias="Hack_B">fonts/Hack/Hack-Bold.ttf</file>
+        <file alias="Hack_BI">fonts/Hack/Hack-BoldItalic.ttf</file>
+        <file alias="Hack_I">fonts/Hack/Hack-Italic.ttf</file>
+
+        <file alias="JetBrainsMono">fonts/JetBrains-Mono/JetBrainsMono-Regular.ttf</file>
+        <file alias="JetBrainsMono_B">fonts/JetBrains-Mono/JetBrainsMono-Bold.ttf</file>
+        <file alias="JetBrainsMono_BI">fonts/JetBrains-Mono/JetBrainsMono-BoldItalic.ttf</file>
+        <file alias="JetBrainsMono_I">fonts/JetBrains-Mono/JetBrainsMono-Italic.ttf</file>
+    </qresource>
+
+    <qresource prefix="/qlementine-themes">
+        <file alias="Adaptix_Dark">themes/adaptix_dark.json</file>
+        <file alias="Adaptix_Light">themes/adaptix_light.json</file>
+        <file alias="Adaptix_Dracula">themes/adaptix_dracula.json</file>
+        <file alias="Dark_Ice">themes/dark_ice.json</file>
+        <file alias="Glass_Morph">themes/glass_morph.json</file>
+        <file alias="Hacker_Tech">themes/hacker_tech.json</file>
+        <file alias="Fallout">themes/fallout.json</file>
+        <file alias="Light_Arc">themes/light_arc.json</file>
+        <file alias="Dark_Classic">themes/dark.json</file>
+        <file alias="Dracula">themes/dracula.json</file>
+    </qresource>
+
+    <qresource prefix="/console-themes">
+        <file alias="console_adaptix_dark.json">themes/console/console_adaptix_dark.json</file>
+        <file alias="console_adaptix_light.json">themes/console/console_adaptix_light.json</file>
+        <file alias="console_adaptix_dracula.json">themes/console/console_adaptix_dracula.json</file>
+        <file alias="console_dark_ice.json">themes/console/console_dark_ice.json</file>
+        <file alias="console_glass_morph.json">themes/console/console_glass_morph.json</file>
+        <file alias="console_hacker_tech.json">themes/console/console_hacker_tech.json</file>
+        <file alias="console_fallout.json">themes/console/console_fallout.json</file>
+        <file alias="console_light_arc.json">themes/console/console_light_arc.json</file>
+        <file alias="console_dark_classic.json">themes/console/console_dark_classic.json</file>
+        <file alias="console_dracula.json">themes/console/console_dracula.json</file>
+    </qresource>
+
+    <qresource prefix="/backgrounds">
+        <file alias="adaptix_background">backgrounds/adaptix_background.png</file>
+    </qresource>
+
+    <qresource prefix="/icons">
+        <file alias="logs">icons/news_64dp.png</file>
+        <file alias="listeners">icons/headphones_64dp.png</file>
+        <file alias="extension">icons/extension_64dp.png</file>
+        <file alias="format_list">icons/format_list_bulleted_64dp.png</file>
+        <file alias="graph">icons/hub_64dp.png</file>
+        <file alias="job">icons/job_64dp.png</file>
+        <file alias="devices">icons/devices_64dp.png</file>
+        <file alias="chat">icons/forum_64dp.png</file>
+        <file alias="vpn">icons/vpn_64dp.png</file>
+        <file alias="downloads">icons/downloads_64.png</file>
+        <file alias="key">icons/key_64dp.png</file>
+        <file alias="picture">icons/picture_64dp.png</file>
+        <file alias="keyboard">icons/keyboard_64dp.png</file>
+        <file alias="link">icons/link_64dp.png</file>
+        <file alias="unlink">icons/link_off_64dp.png</file>
+
+        <file alias="close">icons/close_dp64.png</file>
+        <file alias="check">icons/check_dp64.png</file>
+        <file alias="double_arrow_down">icons/double_arrow_down_64dp.png</file>
+        <file alias="arrow_drop_down">icons/arrow_drop_down_64dp.png</file>
+        <file alias="arrow_drop_up">icons/arrow_drop_up_64dp.png</file>
+        <file alias="reload">icons/autorenew_64dp.png</file>
+        <file alias="folder">icons/folder_64dp.png</file>
+        <file alias="upload">icons/upload_file_64dp.png</file>
+        <file alias="arrow_right">icons/arrow_right_alt_64dp.png</file>
+        <file alias="storage">icons/storage_64dp.png</file>
+
+        <file alias="file_open">icons/file_open_64dp.png</file>
+        <file alias="save_as">icons/save_as_64dp.png</file>
+        <file alias="start">icons/start_64dp.png</file>
+        <file alias="restart">icons/restart_64dp.png</file>
+        <file alias="stop">icons/stop_64dp.png</file>
+        <file alias="settings_account">icons/settings_account_64dp.png</file>
+
+        <file alias="fs_ssd">icons/filesystem/ssd_64dp.png</file>
+        <file alias="fs_document">icons/filesystem/document_64dp.png</file>
+        <file alias="fs_folder">icons/filesystem/folder_64dp.png</file>
+        <file alias="fs_open_folder">icons/filesystem/open_folder_64dp.png</file>
+        <file alias="fs_unknown">icons/filesystem/fs_unknown_64dp.png</file>
+
+        <file alias="os_win_blue">icons/os/icon-windows-blue.png</file>
+        <file alias="os_win_grey">icons/os/icon-windows-grey.png</file>
+        <file alias="os_win_red">icons/os/icon-windows-red.png</file>
+        <file alias="os_linux_blue">icons/os/icon-linux-blue.png</file>
+        <file alias="os_linux_grey">icons/os/icon-linux-grey.png</file>
+        <file alias="os_linux_red">icons/os/icon-linux-red.png</file>
+        <file alias="os_mac_blue">icons/os/icon-mac-blue.png</file>
+        <file alias="os_mac_grey">icons/os/icon-mac-grey.png</file>
+        <file alias="os_mac_red">icons/os/icon-mac-red.png</file>
+    </qresource>
+
+    <qresource prefix="/graph/v1">
+        <file alias="cloud">icons/graph/v1/cloud-100.png</file>
+        <file alias="firewall">icons/graph/v1/firewall-100.png</file>
+        <file alias="win_blue">icons/graph/v1/windows-100-blue.png</file>
+        <file alias="win_grey">icons/graph/v1/windows-100-grey.png</file>
+        <file alias="win_red">icons/graph/v1/windows-100-red.png</file>
+        <file alias="linux_blue">icons/graph/v1/linux-100-blue.png</file>
+        <file alias="linux_grey">icons/graph/v1/linux-100-grey.png</file>
+        <file alias="linux_red">icons/graph/v1/linux-100-red.png</file>
+        <file alias="mac_blue">icons/graph/v1/mac-100-blue.png</file>
+        <file alias="mac_grey">icons/graph/v1/mac-100-grey.png</file>
+        <file alias="mac_red">icons/graph/v1/mac-100-red.png</file>
+        <file alias="unknown_blue">icons/graph/v1/unknown-100-blue.png</file>
+        <file alias="unknown_grey">icons/graph/v1/unknown-100-grey.png</file>
+        <file alias="unknown_red">icons/graph/v1/unknown-100-red.png</file>
+    </qresource>
+
+    <qresource prefix="/graph/v2">
+        <file alias="cloud">icons/graph/v2/cloud-100.png</file>
+        <file alias="firewall">icons/graph/v2/firewall-100.png</file>
+        <file alias="win_blue">icons/graph/v2/windows-100-blue.png</file>
+        <file alias="win_grey">icons/graph/v2/windows-100-grey.png</file>
+        <file alias="win_red">icons/graph/v2/windows-100-red.png</file>
+        <file alias="linux_blue">icons/graph/v2/linux-100-blue.png</file>
+        <file alias="linux_grey">icons/graph/v2/linux-100-grey.png</file>
+        <file alias="linux_red">icons/graph/v2/linux-100-red.png</file>
+        <file alias="mac_blue">icons/graph/v2/mac-100-blue.png</file>
+        <file alias="mac_grey">icons/graph/v2/mac-100-grey.png</file>
+        <file alias="mac_red">icons/graph/v2/mac-100-red.png</file>
+        <file alias="unknown_blue">icons/graph/v2/unknown-100-blue.png</file>
+        <file alias="unknown_grey">icons/graph/v2/unknown-100-grey.png</file>
+        <file alias="unknown_red">icons/graph/v2/unknown-100-red.png</file>
+    </qresource>
+
+    <qresource prefix="/graph/v3">
+        <file alias="cloud">icons/graph/v3/cloud-100.png</file>
+        <file alias="firewall">icons/graph/v3/firewall-100.png</file>
+        <file alias="win_blue">icons/graph/v3/windows-100-blue.png</file>
+        <file alias="win_grey">icons/graph/v3/windows-100-grey.png</file>
+        <file alias="win_red">icons/graph/v3/windows-100-red.png</file>
+        <file alias="linux_blue">icons/graph/v3/linux-100-blue.png</file>
+        <file alias="linux_grey">icons/graph/v3/linux-100-grey.png</file>
+        <file alias="linux_red">icons/graph/v3/linux-100-red.png</file>
+        <file alias="mac_blue">icons/graph/v3/mac-100-blue.png</file>
+        <file alias="mac_grey">icons/graph/v3/mac-100-grey.png</file>
+        <file alias="mac_red">icons/graph/v3/mac-100-red.png</file>
+        <file alias="unknown_blue">icons/graph/v3/unknown-100-blue.png</file>
+        <file alias="unknown_grey">icons/graph/v3/unknown-100-grey.png</file>
+        <file alias="unknown_red">icons/graph/v3/unknown-100-red.png</file>
+    </qresource>
+</RCC>

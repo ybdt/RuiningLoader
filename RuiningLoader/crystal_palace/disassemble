@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+java -Dcrystalpalace.verbose=false -classpath ${BASH_SOURCE%/*}/crystalpalace.jar crystalpalace.btf.Modify $@

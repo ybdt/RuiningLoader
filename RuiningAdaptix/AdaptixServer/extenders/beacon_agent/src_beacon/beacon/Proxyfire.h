@@ -1,0 +1,75 @@
+#pragma once
+
+#include "std.cpp"
+#include "Packer.h"
+
+#define COMMAND_TUNNEL_START_TCP 62
+#define COMMAND_TUNNEL_START_UDP 63
+#define COMMAND_TUNNEL_WRITE_TCP 64
+#define COMMAND_TUNNEL_WRITE_UDP 65
+#define COMMAND_TUNNEL_CLOSE     66
+#define COMMAND_TUNNEL_REVERSE   67
+#define COMMAND_TUNNEL_ACCEPT    68
+#define COMMAND_TUNNEL_PAUSE     69
+#define COMMAND_TUNNEL_RESUME    70
+
+#define TUNNEL_CREATE_SUCCESS 0
+#define TUNNEL_CREATE_ERROR 1
+
+#define TUNNEL_STATE_CLOSE   0
+#define TUNNEL_STATE_READY   1
+#define TUNNEL_STATE_CONNECT 2
+
+#define TUNNEL_MODE_SEND_TCP 0
+#define TUNNEL_MODE_SEND_UDP 1
+#define TUNNEL_MODE_REVERSE_TCP 2
+
+#define TUNNEL_BUFFER_HIGH_WATERMARK 0x400000  // 4MB: stop reading
+#define TUNNEL_BUFFER_LOW_WATERMARK  0x100000  // 1MB: resume reading
+#define TUNNEL_BUFFER_HARD_CAP       0x1000000 // 16MB: close channel
+
+struct TunnelData {
+	ULONG  channelID;
+	ULONG  type;
+	SOCKET sock;
+	BYTE   state;
+	BYTE   mode;
+	ULONG  i_address;
+	WORD   port;
+	ULONG  waitTime;
+	ULONG  startTick;
+	ULONG  closeTimer;
+	CHAR*  writeBuffer;
+	ULONG  writeBufferSize;
+	BOOL   paused;
+	BOOL   server_paused;
+};
+
+class Proxyfire
+{
+public:
+	Vector<TunnelData> tunnels;
+	
+	void ProcessTunnels(Packer* packer);
+
+	void  CheckProxy(Packer* packer);
+	ULONG RecvProxy(Packer* packer);
+	void  FlushProxy(Packer* packer);
+	void  CloseProxy();
+
+	void ConnectMessageTCP(ULONG channelId, ULONG type, CHAR* address, WORD port, Packer* outPacker);
+	void ConnectMessageUDP(ULONG channelId, CHAR* address, WORD port, Packer* outPacker);
+	void ConnectWriteTCP(ULONG channelId, CHAR* data, ULONG dataSize, Packer* outPacker);
+
+	void ConnectWriteUDP(ULONG channelId, CHAR* data, ULONG dataSize);
+	void ConnectClose(ULONG channelId);
+	void ConnectMessageReverse(ULONG tunnelId, WORD port, Packer* outPacker);
+
+	void ConnectPause(ULONG channelId);
+	void ConnectResume(ULONG channelId);
+
+	void AddProxyData(ULONG channelId, ULONG type, SOCKET sock, ULONG waitTime, ULONG mode, ULONG address, WORD port, ULONG state);
+
+	static void* operator new(size_t sz);
+	static void operator delete(void* p) noexcept;
+};
